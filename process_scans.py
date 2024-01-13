@@ -56,7 +56,7 @@ def process_images(input_dir, work_dir):
                 cv2.imwrite(output_path, img_part, [cv2.IMWRITE_PNG_COMPRESSION, 3])
 
 def format_output_name(subdir):
-    pattern = r'^\d{4}-\d{2}-\d{2}[a-zA-Z]\s+'
+    pattern = r'^\d{4}-\d{2}-\d{2}[a-zA-Z]?\s+'
     return re.sub(pattern, '', subdir)
 
 def is_new_pdf_needed(input_files, output_files):
@@ -89,25 +89,24 @@ def is_image_processing_needed(input_files, work_dir):
     for input_file in input_files:
         input_file_basename = os.path.splitext(os.path.basename(input_file))[0]
 
-        # Check if there's at least one work file for each input file
-        # TODO: This fails for cases where 2 work files result from 1 input file (e.g. split pages)
-        work_files_for_input = [f for f in os.listdir(work_dir) if f.startswith(input_file_basename)]
+        # Check if there's at least one valid work file for each input file
+        work_files_for_input = [f for f in os.listdir(work_dir) if f.startswith(input_file_basename) and is_image_file(f)]
         if not work_files_for_input:
-            print(f"No work files found for input file {input_file} in {work_dir}")
+            print(f"No valid work files found for input file {input_file} in {work_dir}")
             return True
 
-        # Find the newest modification time among the work files for this input
+        # Find the newest modification time among the valid work files for this input
         newest_work_mtime = max(mtime(os.path.join(work_dir, f)) for f in work_files_for_input)
 
         # Check if the input file is newer than the newest corresponding work file
         input_mtime = mtime(input_file)
-        #print(f"Comparing mtime: input_file {input_file} ({input_mtime}) vs newest work file time ({newest_work_mtime})")
         if input_mtime > newest_work_mtime:
             print(f"Input file {input_file} is newer than its work files in {work_dir}")
             return True
 
     print("All input files are up to date with their corresponding work files in " + work_dir)
     return False
+
 
 def process_subdir(subdir, input_dir, work_dir, output_dir):
     full_subdir_path = os.path.join(input_dir, subdir)
