@@ -19,9 +19,34 @@ def exists(file_path):
 def mtime(file_path):
     return os.stat(file_path).st_mtime if exists(file_path) else -1
 
+def output_image_path(input_file, work_subdir, part_index):
+    input_basename = os.path.splitext(os.path.basename(input_file))[0]
+    return os.path.join(
+        work_subdir,
+        f"{input_basename}_part_{part_index}.png")
+
+def output_pdf_path(output_dir, work_subdir):
+    pdf_name = output_pdf_name(work_subdir)
+
+    # Put PDFs in directories by composer name: "Bach - Passions" => "Bach/Bach - Passions"
+    parts = re.split(r'\s+-\s+', pdf_name, maxsplit=1)
+    if len(parts) >= 2:
+        composer = parts[0]
+        pdf_name = os.path.join(composer, pdf_name)
+
+    return os.path.join(output_dir, pdf_name) + '.pdf'
+
+def output_pdf_name(subdir):
+    subdir_basename = os.path.basename(subdir)
+    # Remove the date part from the beginning of the string (if it exists)
+    name_without_date = re.sub(r'^\d{4}-\d{2}-\d{2}[a-zA-Z]?\s+', '', subdir_basename)
+
+    # Normalize spaces (replace multiple spaces with a single space)
+    name_without_date = re.sub(r'\s+', ' ', name_without_date).strip()
+
+    return unicodedata.normalize('NFC', name_without_date)
 
 def process_images(input_dir, work_dir):
-    """Process images in a given input directory and place the processed images in a work directory."""
     if not os.path.exists(work_dir):
         os.makedirs(work_dir)
 
@@ -34,7 +59,6 @@ def process_images(input_dir, work_dir):
                 raise ValueError(f"Unable to open the image file: {input_path}")
 
             # Image processing steps
-            # img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             img = img[:, :, 1] # I think green is more contrasted
             img = apply_unsharp_mask(img, kernel_size=3, sharpening_factor=1) # found via testing many values
             img = rotate(img, 180)  # Rotate by 180 degrees
@@ -54,85 +78,77 @@ def process_images(input_dir, work_dir):
                     contraction_percent=1,
                     )
 
-                output_path = os.path.join(work_dir, f"{os.path.splitext(filename)[0]}_part_{i}.png")
+                output_path = output_image_path(input_path, work_dir, i)
+                print(f"-----{output_path}")
                 cv2.imwrite(output_path, img_part, [cv2.IMWRITE_PNG_COMPRESSION, 3])
 
-def format_output_name(subdir):
-    pattern = r'^\d{4}-\d{2}-\d{2}[a-zA-Z]?\s+'
-    return re.sub(pattern, '', subdir)
-
-def is_new_pdf_needed(input_files, output_files):
-    if not output_files:
-        print("No output files found; new PDF needed")
-        return True
-
-    # Extract the directory name from the first input file (assuming all input files are in the same directory)
-    subdir_name = os.path.basename(os.path.dirname(input_files[0]))
-    formatted_subdir_name = format_output_name(subdir_name)
+def is_new_pdf_needed(work_subdir, output_dir):
+    pdf_path = output_pdf_path(output_dir, work_subdir)  # Assuming part_index is not used in your case
 
     # Check if there's a corresponding output PDF file
-    corresponding_pdf = any(formatted_subdir_name in output_file for output_file in output_files)
-    if not corresponding_pdf:
-        print(f"No PDF found for directory {subdir_name}; new PDF needed")
+    if not exists(pdf_path):
+        print(f"No PDF found for directory {work_subdir} ({pdf_path}); new PDF needed")
         return True
 
     # Find the newest modification time among the input files
-    newest_input_mtime = max(mtime(input_file) for input_file in input_files)
+    input_files = glob.glob(os.path.join(work_subdir, '*'))
+    if not input_files:
+        print(f"No input files found in {work_subdir}")
+        return True  # A new PDF is needed if there are no input files
 
-    # Find the newest modification time among the output files
-    newest_output_mtime = max(mtime(output_file) for output_file in output_files)
+    newest_input_mtime = max(mtime(file) for file in input_files)
 
     # Check if any input file is newer than the newest output file
-    if newest_input_mtime > newest_output_mtime:
+    if newest_input_mtime > mtime(pdf_path):
         print("At least one input file is newer than the output files; new PDF needed")
         return True
 
     print("All input files are up to date with output files")
     return False
 
-def is_image_processing_needed(input_files, work_dir):
+def is_image_processing_needed(input_dir, work_subdir):
+    input_files = [os.path.join(input_dir, f) for f in os.listdir(input_dir) if is_image_file(os.path.join(input_dir, f))]
+
     for input_file in input_files:
-        input_file_basename = os.path.splitext(os.path.basename(input_file))[0]
+        # Generate paths for the expected output parts
+        output_paths = [
+            output_image_path(input_file, work_subdir, i) for i in range(2)
+        ]
 
-        # Check if there's at least one valid work file for each input file
-        work_files_for_input = [f for f in os.listdir(work_dir) if f.startswith(input_file_basename) and is_image_file(f)]
-        if not work_files_for_input:
-            print(f"No valid work files found for input file {input_file} in {work_dir}")
-            return True
+        # Check if all output files exist
+        output_exists = all(exists(output_path) for output_path in output_paths)
+        if not output_exists:
+            print(f"No valid work files found for input file {input_file} in {work_subdir}")
+            return True  # Processing needed if any output file does not exist
 
-        # Find the newest modification time among the valid work files for this input
-        newest_work_mtime = max(mtime(os.path.join(work_dir, f)) for f in work_files_for_input)
+        # Find the newest modification time among the output files
+        newest_output_mtime = max(mtime(output_path) for output_path in output_paths)
 
-        # Check if the input file is newer than the newest corresponding work file
-        input_mtime = mtime(input_file)
-        if input_mtime > newest_work_mtime:
-            print(f"Input file {input_file} is newer than its work files in {work_dir}")
-            return True
+        # Check if the input file is newer than the newest output file
+        if mtime(input_file) > newest_output_mtime:
+            print(f"Input file {input_file} is newer than its work files in {work_subdir}")
+            return True  # Processing needed if input is newer than outputs
 
-    print("All input files are up to date with their corresponding work files in " + work_dir)
-    return False
+    print(f"All input files are up to date with their corresponding work files in #{work_subdir}")
+    return False  # Processing not needed if all outputs are up-to-date
 
-
-def process_subdir(subdir, input_dir, work_dir, output_dir):
-    full_subdir_path = os.path.join(input_dir, subdir)
-    subdir_work_path = os.path.join(work_dir, subdir)
-    output_name = format_output_name(subdir)
-    output_files = glob.glob(os.path.join(output_dir, output_name + '*'))
-
-    if not os.path.exists(subdir_work_path):
-        os.makedirs(subdir_work_path)
-
-    input_files = [os.path.join(full_subdir_path, f) for f in os.listdir(full_subdir_path)]
-
-    if is_new_pdf_needed(input_files, output_files):
-        if is_image_processing_needed(input_files, subdir_work_path):
+def process_subdir(input_dir, subdir, work_dir, output_dir):
+    work_subdir = os.path.join(work_dir, subdir)
+    if is_new_pdf_needed(work_subdir, output_dir):
+        if is_image_processing_needed(os.path.join(input_dir, subdir), work_subdir):
             print(f"Processing images for {subdir}")
-            process_images(full_subdir_path, subdir_work_path)
+            process_images(os.path.join(input_dir, subdir), work_dir)
         else:
             print(f"Images up to date for {subdir}; skipping")
 
-        print(f"Generating PDF for {subdir_work_path}, {output_dir}, {output_name}")
-        images_to_pdf(subdir_work_path, output_dir, output_name)
+        pdf_path = output_pdf_path(output_dir, work_subdir)
+        pdf_output_dir = os.path.dirname(pdf_path)
+        if not os.path.exists(pdf_output_dir):
+            os.makedirs(pdf_output_dir)
+        pdf_name = os.path.basename(pdf_path)
+
+        print(f"    Generating PDF: {work_subdir} => {pdf_path}")
+        images_to_pdf(work_subdir, pdf_output_dir, pdf_name)
     else:
         print(f"Output PDF is up to date for {subdir}; skipping")
 
@@ -147,4 +163,4 @@ if __name__ == '__main__':
     subdirs.sort()
 
     for subdir in subdirs:
-        process_subdir(subdir, args.input_dir, args.work_dir, args.output_dir)
+        process_subdir(args.input_dir, subdir, args.work_dir, args.output_dir)
