@@ -8,7 +8,6 @@ OUTPUT_DIR := ../scans-output
 S3_BUCKET := cantatas-scores
 S3_SCANS_DIR := Fresh Scans
 S3_PROCESSED_SCANS_DIR := Fresh Scans - Processed
-UPLOAD_SCRIPT := upload_pdfs.sh
 
 # Default target
 all: download contrast-split-crop upload move-s3 move-local
@@ -27,7 +26,7 @@ download:
 
 # Upload PDFs to S3
 upload:
-	bash "$(UPLOAD_SCRIPT)" "$(OUTPUT_DIR)" "$(S3_BUCKET)"
+	aws s3 sync "$(OUTPUT_DIR)" "s3://$(S3_BUCKET)" --metadata-directive REPLACE --content-disposition attachment --exclude "*" --include "*.pdf" --only-show-errors
 
 # Move processed scans to the processed directory on S3
 move-s3:

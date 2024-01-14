@@ -6,6 +6,7 @@ import sys
 import glob
 from stat import S_ISDIR, S_ISREG
 import logging
+import unicodedata
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 
