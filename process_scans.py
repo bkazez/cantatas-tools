@@ -18,6 +18,7 @@ def exists(file_path):
 def mtime(file_path):
     return os.stat(file_path).st_mtime if exists(file_path) else -1
 
+
 def process_images(input_dir, work_dir):
     """Process images in a given input directory and place the processed images in a work directory."""
     if not os.path.exists(work_dir):
@@ -45,12 +46,12 @@ def process_images(input_dir, work_dir):
                     analysis_area_percent=80, # handle pages with just a bit of text in the corner
                     text_black_crop_percent=37, # found via testing many values
                     text_white_crop_percent=11, # found via testing many values
-                    debug=True)
-                _, img_part = autocrop(
+                    )
+                img_part = autocrop(
                     img_part,
-                    threshold=150,
+                    threshold=200,
                     contraction_percent=1,
-                    debug=True)
+                    )
 
                 output_path = os.path.join(work_dir, f"{os.path.splitext(filename)[0]}_part_{i}.png")
                 cv2.imwrite(output_path, img_part, [cv2.IMWRITE_PNG_COMPRESSION, 3])
@@ -60,27 +61,30 @@ def format_output_name(subdir):
     return re.sub(pattern, '', subdir)
 
 def is_new_pdf_needed(input_files, output_files):
-    # Check if there are any output files at all
     if not output_files:
         print("No output files found; new PDF needed")
         return True
 
-    newest_output_mtime = max((mtime(file) for file in output_files), default=-1)
+    # Extract the directory name from the first input file (assuming all input files are in the same directory)
+    subdir_name = os.path.basename(os.path.dirname(input_files[0]))
+    formatted_subdir_name = format_output_name(subdir_name)
+
+    # Check if there's a corresponding output PDF file
+    corresponding_pdf = any(formatted_subdir_name in output_file for output_file in output_files)
+    if not corresponding_pdf:
+        print(f"No PDF found for directory {subdir_name}; new PDF needed")
+        return True
+
+    # Find the newest modification time among the input files
+    newest_input_mtime = max(mtime(input_file) for input_file in input_files)
+
+    # Find the newest modification time among the output files
+    newest_output_mtime = max(mtime(output_file) for output_file in output_files)
 
     # Check if any input file is newer than the newest output file
-    for input_file in input_files:
-        input_file_basename = os.path.splitext(os.path.basename(input_file))[0]
-
-        # Check for the existence of an output file corresponding to the input file
-        corresponding_output_files = [f for f in output_files if f.startswith(input_file_basename)]
-        if not corresponding_output_files:
-            print(f"No output files found for input file {input_file}; new PDF needed")
-            return True
-
-        # Check if the input file is newer than the newest corresponding output file
-        if mtime(input_file) > newest_output_mtime:
-            print(f"Input file {input_file} is newer than output files; new PDF needed")
-            return True
+    if newest_input_mtime > newest_output_mtime:
+        print("At least one input file is newer than the output files; new PDF needed")
+        return True
 
     print("All input files are up to date with output files")
     return False
