@@ -27,18 +27,17 @@ def process_images(input_dir, output_dir):
 
             # Iterate over different adjustment values
             # I think j = 10, i = 20 is okay
-            i_values = [True, False] # np.linspace(3, 7, 3, dtype=int)
+            i_values = [True] # np.linspace(3, 7, 3, dtype=int)
             j_values = [True] # np.linspace(3, 7, 5, dtype=int)
 
             for i in i_values:
                 for j in j_values:
                     img_copy = img.copy() # Operate on a copy to avoid analyzing image multiple times
-                    if i:
-                        img_copy = apply_unsharp_mask(img_copy, kernel_size=3, sharpening_factor=1)
-                    img_copy = adjust_contrast_peaks(img_copy, analysis_area_percent=80, text_black_crop_percent=37, text_white_crop_percent=11)
-
                     output_filename = f"{os.path.splitext(filename)[0]}_{i}_{j}.png"
                     output_path = os.path.join(output_dir, output_filename)
+                    img_copy = apply_unsharp_mask(img_copy, kernel_size=3, sharpening_factor=1)
+                    img_copy = adjust_contrast_peaks(img_copy, analysis_area_percent=80, text_black_crop_percent=37, text_white_crop_percent=11, debug=True, output_path=output_path)
+
                     cv2.imwrite(output_path, img_copy, [cv2.IMWRITE_PNG_COMPRESSION, 3])
 
 if __name__ == '__main__':

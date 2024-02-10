@@ -46,7 +46,7 @@ def output_pdf_name(subdir):
 
     return unicodedata.normalize('NFC', name_without_date)
 
-def process_images(input_dir, work_dir):
+def process_images(input_dir, work_dir, nosplit=False, norotate=False):
     if not os.path.exists(work_dir):
         os.makedirs(work_dir)
 
@@ -61,25 +61,37 @@ def process_images(input_dir, work_dir):
             # Image processing steps
             img = img[:, :, 1] # I think green is more contrasted
             img = apply_unsharp_mask(img, kernel_size=3, sharpening_factor=1) # found via testing many values
-            img = rotate(img, 180)  # Rotate by 180 degrees
-            img_list = split(img)
+
+            if not norotate:
+                angle = 180
+                if img.shape[0] > img.shape[1]:
+                    angle -= 90
+                img = rotate(img, angle)
+
+            if nosplit:
+                img_list = [img]
+            else:
+                img_list = split(img)
 
             # Save processed images
             for i, img_part in enumerate(img_list):
+                output_path = output_image_path(input_path, work_dir, i)
+                print(f"-----{output_path}")
+
                 img_part = adjust_contrast_peaks(
                     img_part,
+                    output_path=output_path,
                     analysis_area_percent=80, # handle pages with just a bit of text in the corner
                     text_black_crop_percent=37, # found via testing many values
                     text_white_crop_percent=11, # found via testing many values
                     )
                 img_part = autocrop(
                     img_part,
+                    output_path=output_path,
                     threshold=200,
                     contraction_percent=1,
                     )
 
-                output_path = output_image_path(input_path, work_dir, i)
-                print(f"-----{output_path}")
                 cv2.imwrite(output_path, img_part, [cv2.IMWRITE_PNG_COMPRESSION, 3])
 
 def is_new_pdf_needed(work_subdir, output_dir):
@@ -132,12 +144,12 @@ def is_image_processing_needed(input_dir, work_subdir):
     print(f"All input files are up to date with their corresponding work files in #{work_subdir}")
     return False  # Processing not needed if all outputs are up-to-date
 
-def process_subdir(input_dir, subdir, work_dir, output_dir):
+def process_subdir(input_dir, subdir, work_dir, output_dir, nosplit=False, norotate=False):
     work_subdir = os.path.join(work_dir, subdir)
     if is_new_pdf_needed(work_subdir, output_dir):
         if is_image_processing_needed(os.path.join(input_dir, subdir), work_subdir):
             print(f"Processing images for {subdir}")
-            process_images(os.path.join(input_dir, subdir), work_dir)
+            process_images(os.path.join(input_dir, subdir), work_subdir, nosplit, norotate)
         else:
             print(f"Images up to date for {subdir}; skipping")
 
@@ -157,10 +169,12 @@ if __name__ == '__main__':
     parser.add_argument("input_dir", help="Path to the directory containing scans.")
     parser.add_argument("work_dir", help="Path to the directory for processed images.")
     parser.add_argument("output_dir", help="Path to the directory where PDFs will be saved.")
+    parser.add_argument("--nosplit", action="store_true", help="Disable splitting of images")
+    parser.add_argument("--norotate", action="store_true", help="Disable rotation of images")
     args = parser.parse_args()
 
     subdirs = next(os.walk(args.input_dir))[1]
     subdirs.sort()
 
     for subdir in subdirs:
-        process_subdir(args.input_dir, subdir, args.work_dir, args.output_dir)
+        process_subdir(args.input_dir, subdir, args.work_dir, args.output_dir, args.nosplit, args.norotate)

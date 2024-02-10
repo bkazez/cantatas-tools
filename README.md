@@ -9,4 +9,6 @@ The Makefile automates the workflow for processing, converting, and uploading sc
 Be sure to activate the Python environment first:
 
 source venv/bin/activate
-. ../../pdfutils/venv/bin/activate
+
+cd cantatas-tools
+python3 test.py ../tests ../tests-output

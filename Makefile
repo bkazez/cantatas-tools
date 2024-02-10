@@ -14,11 +14,7 @@ all: download contrast-split-crop upload move-s3 move-local
 
 # Process all folders
 process:
-	@echo "Processing images in directory $(SCANS_DIR)"
-	@mkdir -p "$(WORK_DIR)"
-	@mkdir -p "$(OUTPUT_DIR)"
 	@python process_scans.py "$(SCANS_DIR)" "$(WORK_DIR)" "$(OUTPUT_DIR)"
-	@echo "Processed directories in $(SCANS_DIR)"
 
 # Download images from S3
 download:
