@@ -78,19 +78,13 @@ def process_images(input_dir, work_dir, nosplit=False, norotate=False):
                 output_path = output_image_path(input_path, work_dir, i)
                 print(f"-----{output_path}")
 
-                img_part = adjust_contrast_peaks(
-                    img_part,
-                    output_path=output_path,
-                    analysis_area_percent=80, # handle pages with just a bit of text in the corner
-                    text_black_crop_percent=37, # found via testing many values
-                    text_white_crop_percent=11, # found via testing many values
-                    )
+                img_part = adjust_contrast_peaks(img_part, output_path=output_path)
                 img_part = autocrop(
                     img_part,
                     output_path=output_path,
                     threshold=200,
                     contraction_percent=1,
-                    )
+                )
 
                 cv2.imwrite(output_path, img_part, [cv2.IMWRITE_PNG_COMPRESSION, 3])
 
