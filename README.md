@@ -1,6 +1,7 @@
 Automated workflow for processing, converting, and uploading scanned images.
 
-- `make all`: Runs all steps.
+- `make all`: Runs all steps (except tests).
+- `make test`: Runs tests.
 - `make download`: Syncs folders of images from the S3 "Fresh Scans" folder.
 - `make process`: Applies contrast adjustments and other image processing.
 - `make convert`: Splits processed images into pages and compiles them into a single PDF.

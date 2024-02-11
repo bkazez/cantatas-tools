@@ -32,11 +32,16 @@ def process_images(input_dir, output_dir):
 
             for i in i_values:
                 for j in j_values:
-                    img_copy = img.copy() # Operate on a copy to avoid analyzing image multiple times
+                    # Write out original
+                    output_filename = f"{os.path.splitext(filename)[0]}_orig.png"
+                    cv2.imwrite(os.path.join(output_dir, output_filename), img, [cv2.IMWRITE_PNG_COMPRESSION, 3])
+
+                    # Operate on a copy to avoid analyzing `img` multiple times
+                    img_copy = img.copy()
                     output_filename = f"{os.path.splitext(filename)[0]}_{i}_{j}.png"
                     output_path = os.path.join(output_dir, output_filename)
                     img_copy = apply_unsharp_mask(img_copy, kernel_size=3, sharpening_factor=1)
-                    img_copy = adjust_contrast_peaks(img_copy, debug=True, output_path=output_path)
+                    img_copy = adjust_contrast_peaks(img_copy, debug=True)
 
                     cv2.imwrite(output_path, img_copy, [cv2.IMWRITE_PNG_COMPRESSION, 3])
 

@@ -58,15 +58,16 @@ def process_images(input_dir, work_dir, nosplit=False, norotate=False):
             if img is None:
                 raise ValueError(f"Unable to open the image file: {input_path}")
 
-            # Image processing steps
-            img = img[:, :, 1] # I think green is more contrasted
-            img = apply_unsharp_mask(img, kernel_size=3, sharpening_factor=1) # found via testing many values
-
+            # Image processing
             if not norotate:
                 angle = 180
                 if img.shape[0] > img.shape[1]:
                     angle -= 90
                 img = rotate(img, angle)
+
+            img = img[:, :, 1] # I think green is more contrasted
+            img = apply_unsharp_mask(img, kernel_size=3, sharpening_factor=1) # found via testing many values
+            img = adjust_contrast_peaks(img)
 
             if nosplit:
                 img_list = [img]
@@ -78,7 +79,6 @@ def process_images(input_dir, work_dir, nosplit=False, norotate=False):
                 output_path = output_image_path(input_path, work_dir, i)
                 print(f"-----{output_path}")
 
-                img_part = adjust_contrast_peaks(img_part, output_path=output_path)
                 img_part = autocrop(
                     img_part,
                     output_path=output_path,
