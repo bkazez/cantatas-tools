@@ -55,15 +55,19 @@ def process_images(input_dir, work_dir, nosplit=False, norotate=False):
         if is_image_file(input_path):
             print(input_path)
             img = cv2.imread(input_path)
+
             if img is None:
                 raise ValueError(f"Unable to open the image file: {input_path}")
 
             # Image processing
             if not norotate:
-                angle = 180
-                if img.shape[0] > img.shape[1]:
-                    angle -= 90
-                img = rotate(img, angle)
+                height, width, _ = img.shape
+                if height > width:
+                    # Some images are vertical for some reason
+                    img = cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE)
+                else:
+                    # Most are upside down
+                    img = cv2.rotate(img, cv2.ROTATE_180)
 
             img = img[:, :, 1] # I think green is more contrasted
             img = apply_unsharp_mask(img, kernel_size=3, sharpening_factor=1) # found via testing many values
