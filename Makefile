@@ -12,6 +12,10 @@ S3_PROCESSED_SCANS_DIR := Fresh Scans - Processed
 # Default target
 all: download contrast-split-crop upload move-s3 move-local
 
+# Run tests
+test:
+	@python test.py ../tests ../tests-output
+
 # Process all folders
 process:
 	@python process_scans.py "$(SCANS_DIR)" "$(WORK_DIR)" "$(OUTPUT_DIR)"
