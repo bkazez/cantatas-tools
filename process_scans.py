@@ -8,6 +8,8 @@ from stat import S_ISDIR, S_ISREG
 import logging
 import unicodedata
 
+DEBUG = True
+
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from pdfutils.img import adjust_contrast_peaks, rotate, split, autocrop, is_image_file, apply_unsharp_mask
@@ -46,16 +48,22 @@ def output_pdf_name(subdir):
 
     return unicodedata.normalize('NFC', name_without_date)
 
-def process_images(input_dir, work_dir, nosplit=False, norotate=False):
+def process_images(input_dir, work_dir, nosplit=False, norotate=False, debug=False):
     if not os.path.exists(work_dir):
         os.makedirs(work_dir)
 
+    image_counter = 0  # Initialize a counter to track the number of images processed
+
     for filename in sorted(os.listdir(input_dir)):
         input_path = os.path.join(input_dir, filename)
-        if is_image_file(input_path):
-            print(input_path)
-            img = cv2.imread(input_path)
+        if is_image_file(input_path):  # Assuming is_image_file() checks if the file is an image
+            image_counter += 1  # Increment the counter for each image found
 
+            # In debug mode, only process every 10th image
+            if debug and image_counter % 10 != 0:
+                continue  # Skip this image and continue with the next iteration
+
+            img = cv2.imread(input_path)
             if img is None:
                 raise ValueError(f"Unable to open the image file: {input_path}")
 
@@ -71,7 +79,6 @@ def process_images(input_dir, work_dir, nosplit=False, norotate=False):
 
             img = img[:, :, 1] # I think green is more contrasted
             img = apply_unsharp_mask(img, kernel_size=3, sharpening_factor=1) # found via testing many values
-            img = adjust_contrast_peaks(img)
 
             if nosplit:
                 img_list = [img]
@@ -81,14 +88,22 @@ def process_images(input_dir, work_dir, nosplit=False, norotate=False):
             # Save processed images
             for i, img_part in enumerate(img_list):
                 output_path = output_image_path(input_path, work_dir, i)
-                print(f"-----{output_path}")
 
+                img_part, debug_overlay = adjust_contrast_peaks(img_part, debug=debug)
                 img_part = autocrop(
                     img_part,
                     output_path=output_path,
                     threshold=200,
-                    contraction_percent=1,
+                    contraction_percent=0,
                 )
+
+                if debug:
+                    if len(img_part.shape) == 2:  # img_part is grayscale
+                        img_part = cv2.cvtColor(img_part, cv2.COLOR_GRAY2BGR)
+                    h, w, _ = img_part.shape
+                    overlay_start_y = h - debug_overlay.shape[0]
+                    overlay_start_x = 0
+                    img_part[overlay_start_y:h, overlay_start_x:overlay_start_x + debug_overlay.shape[1]] = debug_overlay
 
                 cv2.imwrite(output_path, img_part, [cv2.IMWRITE_PNG_COMPRESSION, 3])
 
@@ -142,12 +157,12 @@ def is_image_processing_needed(input_dir, work_subdir):
     print(f"All input files are up to date with their corresponding work files in #{work_subdir}")
     return False  # Processing not needed if all outputs are up-to-date
 
-def process_subdir(input_dir, subdir, work_dir, output_dir, nosplit=False, norotate=False):
+def process_subdir(input_dir, subdir, work_dir, output_dir, nosplit=False, norotate=False, debug=False):
     work_subdir = os.path.join(work_dir, subdir)
     if is_new_pdf_needed(work_subdir, output_dir):
         if is_image_processing_needed(os.path.join(input_dir, subdir), work_subdir):
             print(f"Processing images for {subdir}")
-            process_images(os.path.join(input_dir, subdir), work_subdir, nosplit, norotate)
+            process_images(os.path.join(input_dir, subdir), work_subdir, nosplit, norotate, debug=debug)
         else:
             print(f"Images up to date for {subdir}; skipping")
 
@@ -169,10 +184,11 @@ if __name__ == '__main__':
     parser.add_argument("output_dir", help="Path to the directory where PDFs will be saved.")
     parser.add_argument("--nosplit", action="store_true", help="Disable splitting of images")
     parser.add_argument("--norotate", action="store_true", help="Disable rotation of images")
+    parser.add_argument("--debug", action="store_true", help="Overlay histograms and process only a few images")
     args = parser.parse_args()
 
     subdirs = next(os.walk(args.input_dir))[1]
     subdirs.sort()
 
     for subdir in subdirs:
-        process_subdir(args.input_dir, subdir, args.work_dir, args.output_dir, args.nosplit, args.norotate)
+        process_subdir(args.input_dir, subdir, args.work_dir, args.output_dir, args.nosplit, args.norotate, DEBUG or args.debug)

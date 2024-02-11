@@ -40,4 +40,4 @@ move-local:
 clean:
 	@echo "Cleaning up..."
 	@rm -rf "$(WORK_DIR)"
-	@rm -rf "$(OUTPUT_DIR)"/*
+	@rm -rf "$(OUTPUT_DIR)"

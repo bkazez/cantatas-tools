@@ -33,15 +33,24 @@ def process_images(input_dir, output_dir):
             for i in i_values:
                 for j in j_values:
                     # Write out original
-                    output_filename = f"{os.path.splitext(filename)[0]}_orig.png"
-                    cv2.imwrite(os.path.join(output_dir, output_filename), img, [cv2.IMWRITE_PNG_COMPRESSION, 3])
+                    #output_filename = f"{os.path.splitext(filename)[0]}_orig.png"
+                    #cv2.imwrite(os.path.join(output_dir, output_filename), img, [cv2.IMWRITE_PNG_COMPRESSION, 3])
 
                     # Operate on a copy to avoid analyzing `img` multiple times
                     img_copy = img.copy()
                     output_filename = f"{os.path.splitext(filename)[0]}_{i}_{j}.png"
                     output_path = os.path.join(output_dir, output_filename)
                     img_copy = apply_unsharp_mask(img_copy, kernel_size=3, sharpening_factor=1)
-                    img_copy = adjust_contrast_peaks(img_copy, debug=True)
+                    img_copy, debug_overlay = adjust_contrast_peaks(img_copy, debug=True)
+
+                    # Add debug info
+                    if len(img_copy.shape) == 2:  # img_part is grayscale
+                        img_copy = cv2.cvtColor(img_copy, cv2.COLOR_GRAY2BGR)
+                    h, w, _ = img_copy.shape
+                    overlay_start_y = h - debug_overlay.shape[0]
+                    overlay_start_x = 0
+                    img_copy[overlay_start_y:h, overlay_start_x:overlay_start_x + debug_overlay.shape[1]] = debug_overlay
+
 
                     cv2.imwrite(output_path, img_copy, [cv2.IMWRITE_PNG_COMPRESSION, 3])
 
