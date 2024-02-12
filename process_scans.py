@@ -8,7 +8,7 @@ from stat import S_ISDIR, S_ISREG
 import logging
 import unicodedata
 
-DEBUG = True
+DEBUG = False
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 
@@ -63,6 +63,7 @@ def process_images(input_dir, work_dir, nosplit=False, norotate=False, debug=Fal
             if debug and image_counter % 10 != 0:
                 continue  # Skip this image and continue with the next iteration
 
+            print(input_path)
             img = cv2.imread(input_path)
             if img is None:
                 raise ValueError(f"Unable to open the image file: {input_path}")
