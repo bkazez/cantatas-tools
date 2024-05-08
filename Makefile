@@ -9,20 +9,17 @@ S3_BUCKET := cantatas-scores
 S3_SCANS_DIR := Fresh Scans
 S3_PROCESSED_SCANS_DIR := Fresh Scans - Processed
 
-# Default target
-all: download contrast-split-crop upload move-s3 move-local
-
 # Run tests
 test:
 	@python test.py ../tests ../tests-output
 
-# Process all folders
-process:
-	@python process_scans.py "$(SCANS_DIR)" "$(WORK_DIR)" "$(OUTPUT_DIR)"
-
 # Download images from S3
 download:
 	aws s3 sync "s3://$(S3_BUCKET)/$(S3_SCANS_DIR)" "$(SCANS_DIR)"
+
+# Process all folders
+process:
+	@python process_scans.py "$(SCANS_DIR)" "$(WORK_DIR)" "$(OUTPUT_DIR)"
 
 # Upload PDFs to S3
 upload:
@@ -31,10 +28,6 @@ upload:
 # Move processed scans to the processed directory on S3
 move-s3:
 	aws s3 mv "s3://$(S3_BUCKET)/$(S3_SCANS_DIR)" "s3://$(S3_BUCKET)/$(S3_PROCESSED_SCANS_DIR)" --recursive
-
-# Move processed scans to the processed directory locally
-move-local:
-	mv "$(SCANS_DIR)"/* "$(PROCESSED_SCANS_DIR)/"
 
 # Clean target to remove processed images and PDFs
 clean:
