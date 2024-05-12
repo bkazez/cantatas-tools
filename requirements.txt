@@ -1,2 +1,3 @@
 pdfutils
 requests
+bs4
