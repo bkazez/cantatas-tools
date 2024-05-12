@@ -1,12 +1,11 @@
+import json
+import re
+import sys
 import urllib.parse
 import webbrowser
 import xml.etree.ElementTree as ET
 import requests
 from bs4 import BeautifulSoup
-import sys
-import re
-import html
-import json
 
 def get_url_content(url):
     response = requests.get(url)
@@ -28,20 +27,16 @@ def empty_data():
 
 def extract_data_from_xml(url, content):
     root, ns = parse_xml(content)
-
     data = empty_data()
+    data['fromWhat'] = url[:-5] if url.endswith('/mods') else url
 
-    if url:
-        data['fromWhat'] = url[:-5] if url.endswith('/mods') else url
-
-    # Extract title and subtitle
     title_element = root.find('.//mods:titleInfo', ns)
     if title_element:
         title = title_element.find('mods:title', ns)
         subTitle = title_element.find('mods:subTitle', ns)
-        data['title'] = (title.text if title is not None else "") + (f": {subTitle.text}" if subTitle else "")
-
-    # Extract series information
+        data['title'] = title.text if title is not None else ""
+        if subTitle:
+            data['title'] += f": {subTitle.text}"
 
     series_element = root.find('.//mods:relatedItem[@type="series"]', ns)
     if series_element:
@@ -50,40 +45,31 @@ def extract_data_from_xml(url, content):
         data['series_title'] = series_title.text if series_title is not None else ""
         data['series_part_number'] = series_part_number.text if series_part_number is not None else ""
 
-    # Extract author information
     first_personal_name = root.find('.//mods:name[@type="personal"]', ns)
-    primary_name_part = first_personal_name.find('mods:namePart', ns).text.strip(',')
-    author_date = first_personal_name.find('mods:namePart[@type="date"]', ns)
-    author_date = f" ({author_date.text})" if author_date is not None else ''
-    data['author'] = primary_name_part + author_date
+    if first_personal_name:
+        primary_name_part = first_personal_name.find('mods:namePart', ns).text.strip(',')
+        author_date = first_personal_name.find('mods:namePart[@type="date"]', ns)
+        author_date = f" ({author_date.text})" if author_date is not None else ''
+        data['author'] = primary_name_part + author_date
 
-    # Extract publishing information
     publication_info = root.find('.//mods:originInfo[@eventType="publication"]', ns)
     if publication_info:
-        publisher_element = root.find('.//mods:originInfo[@eventType="publication"]/mods:agent/mods:namePart', ns)
-        data['publisher'] = publisher_element.text.strip(',') if publisher_element is not None else ''
-
+        publisher_element = publication_info.find('.//mods:agent/mods:namePart', ns)
         date_issued = publication_info.find('mods:dateIssued', ns)
-        data['year_of_publication'] = date_issued.text if date_issued is not None else ''
+        data['publisher'] = publisher_element.text.strip(',') if publisher_element is not None else ''
+        data['year_of_publication'] = date_issued.text.strip('.,') if date_issued is not None else ''
 
-    # Extract physical description
     physical_description = root.find('.//mods:physicalDescription/mods:extent', ns)
     data['physical_description'] = physical_description.text if physical_description is not None else ""
 
-    # Extract identifiers
     for id_type in ['oclc', 'lccn']:
-        identifier_elements = root.findall(f'.//mods:identifier[@type="{id_type}"]', ns)
-        for identifier in identifier_elements:
-            identifier_text = identifier.text if identifier is not None else ''
-            # Remove any leading non-numeric characters for 'oclc' identifiers
+        identifier_element = root.find(f'.//mods:identifier[@type="{id_type}"]', ns)
+        if identifier_element:
+            identifier_text = identifier_element.text if identifier_element is not None else ''
             if id_type == 'oclc':
-                # Using regex to find the first sequence of digits and ignore non-digit prefixes
                 match = re.search(r'\d+', identifier_text)
                 identifier_text = match.group(0) if match else ''
             data[id_type] = identifier_text
-            # Assuming only one identifier per type is needed, break after finding the first valid one
-            if identifier_text:
-                break
 
     return data
 
@@ -106,7 +92,6 @@ def extract_from_html(url, content):
                 'oclc': record.get("oclcNumber", ""),
                 'fromWhat': url,
             })
-            print(data)
             return data
         except json.JSONDecodeError as e:
             print(f"JSON decode error: {e}")
@@ -122,11 +107,7 @@ def generate_prefilled_jotform_url(data):
     if not data:
         print("Error: No data to generate URL.")
         return None
-
-    # Base URL of the JotForm
     base_url = "https://wittenberg.jotform.com/202176782372155"
-
-    # Dictionary of form parameters and values
     form_data = {
         'parentURL': 'https://www.wittenberg.edu/lib/services/forms/ill_book',
         'jsForm': 'true',
@@ -148,30 +129,19 @@ def generate_prefilled_jotform_url(data):
         'edition': '. '.join(filter(None, [data['publisher'], data['series_title'], data['series_part_number'], data['physical_description']])),
         'fromWhat': data['fromWhat'],
     }
-
-    # Encode the parameters
     encoded_params = urllib.parse.urlencode(form_data, quote_via=urllib.parse.quote)
-
-    # Construct the full URL
-    full_url = f"{base_url}?{encoded_params}"
-    return full_url
+    return f"{base_url}?{encoded_params}"
 
 def main():
     if len(sys.argv) < 2:
         print("Usage: python script.py <URL>")
         sys.exit(1)
-
     url = sys.argv[1]
     content = get_url_content(url)
-    if "worldcat.org" in url:
-        extracted_data = extract_from_html(url, content)
-    else:
-        extracted_data = extract_data_from_xml(url, content)
-
+    extracted_data = extract_from_html(url, content) if "worldcat.org" in url else extract_data_from_xml(url, content)
     if not extracted_data:
         print("Failed to extract data.")
         sys.exit(1)
-
     jotform_url = generate_prefilled_jotform_url(extracted_data)
     if jotform_url:
         webbrowser.open(jotform_url)
