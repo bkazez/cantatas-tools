@@ -2,74 +2,97 @@ import urllib.parse
 import webbrowser
 import xml.etree.ElementTree as ET
 import requests
+from bs4 import BeautifulSoup
 import sys
+import json
 
-def download_and_parse_xml(url):
-    # Send a GET request to the URL
+def get_url_content(url):
     response = requests.get(url)
-    response.raise_for_status()  # Raises an HTTPError for bad responses
+    response.raise_for_status()
+    return response.content
 
-    # Parse the XML response content
-    root = ET.fromstring(response.content)
-
-    # Define the namespace
+def parse_xml(content):
+    root = ET.fromstring(content)
     ns = {'mods': 'http://www.loc.gov/mods/v3'}
+    return root, ns
 
-    # Extract elements for the title and subtitle
-    title_element = root.find('.//mods:titleInfo', ns)
-    title = title_element.find('mods:title', ns).text
-    subTitle = title_element.find('mods:subTitle', ns)
-    subTitle = f" : {subTitle.text}" if subTitle is not None else ""
-    full_title = title + subTitle
+def extract_data_from_xml(url, content):
+    root, ns = parse_xml(content)
 
-    # Handling relatedItem type "series"
-    series_element = root.find('.//mods:relatedItem[@type="series"]', ns)
-    if series_element is not None:
-        series_title = series_element.find('.//mods:title', ns).text
-        series_part_number = series_element.find('.//mods:partNumber', ns).text
-    else:
-        series_title = ''
-        series_part_number = ''
-
-    # Extract author's primary name part and date
-    first_personal_name = root.find('.//mods:name[@type="personal"]', ns)
-    primary_name_part = first_personal_name.find('mods:namePart', ns).text.strip(',')  # Finds the first namePart
-    author_date = first_personal_name.find('mods:namePart[@type="date"]', ns)
-    author_date = f" ({author_date.text})" if author_date is not None else ''
-    author = primary_name_part + author_date
-
-    # Origin Info for agent and dateIssued
-    publisher = root.find('.//mods:originInfo/mods:agent/mods:namePart', ns).text
-    date_issued = root.find('.//mods:originInfo/mods:dateIssued', ns).text
-
-    # Extract physical description as edition
-    physical_description = root.find('.//mods:physicalDescription/mods:extent', ns)
-    physical_description = physical_description.text if physical_description is not None else ''
-
-    # Extract ISBN, OCLC, LCCN
-    isbn = root.find('.//mods:identifier[@type="isbn"]', ns)
-    oclc = root.find('.//mods:identifier[@type="oclc"]', ns)
-    lccn = root.find('.//mods:identifier[@type="lccn"]', ns)
-
-    isbn = isbn.text if isbn is not None else ''
-    oclc = oclc.text.replace('ocn', '') if oclc is not None else ''
-    lccn = lccn.text if lccn is not None else ''
-
-    return {
-        'title': full_title,
-        'author': author,
-        'year_of_publication': date_issued,
-        'isbn': isbn,
-        'oclc': oclc,
-        'lccn': lccn,
-        'publisher': publisher,
-        'physical_description': physical_description,
-        'series_title': series_title,
-        'series_part_number': series_part_number,
-        'fromWhat': url[:-5] if url and url.endswith('/mods') else 'https://www.wittenberg.edu/lib/services/forms/ill_book'
+    data = {
+        'title': '', 'author': '', 'year_of_publication': '',
+        'isbn': '', 'oclc': '', 'lccn': '', 'publisher': '',
+        'physical_description': '', 'series_title': '', 'series_part_number': '',
+        'fromWhat': '',
     }
 
+    if url:
+        data['fromWhat'] = url[:-5] if url.endswith('/mods') else url
+
+    # Extract title and subtitle
+    title_element = root.find('.//mods:titleInfo', ns)
+    if title_element:
+        title = title_element.find('mods:title', ns)
+        subTitle = title_element.find('mods:subTitle', ns)
+        data['title'] = (title.text if title is not None else "") + (f": {subTitle.text}" if subTitle else "")
+
+    # Extract series information
+    series_element = root.find('.//mods:relatedItem[@type="series"]', ns)
+    if series_element:
+        series_title = series_element.find('.//mods:title', ns)
+        series_part_number = series_element.find('.//mods:partNumber', ns)
+        data['series_title'] = series_title.text if series_title else ""
+        data['series_part_number'] = series_part_number.text if series_part_number else ""
+
+    # Extract author information
+    first_personal_name = root.find('.//mods:name[@type="personal"]', ns)
+    if first_personal_name:
+        primary_name_part = first_personal_name.find('mods:namePart', ns)
+        author_date = first_personal_name.find('mods:namePart[@type="date"]', ns)
+        data['author'] = (primary_name_part.text.strip(',') if primary_name_part else "") + (f" ({author_date.text})" if author_date else "")
+
+    # Extract publishing information
+    origin_info = root.find('.//mods:originInfo', ns)
+    if origin_info:
+        publisher_name_part = origin_info.find('mods:agent/mods:namePart', ns)
+        date_issued = origin_info.find('mods:dateIssued', ns)
+        data['publisher'] = publisher_name_part.text if publisher_name_part else ""
+        data['year_of_publication'] = date_issued.text if date_issued else ""
+
+    # Extract physical description
+    physical_description = root.find('.//mods:physicalDescription/mods:extent', ns)
+    data['physical_description'] = physical_description.text if physical_description else ""
+
+    # Extract identifiers
+    for id_type in ['isbn', 'oclc', 'lccn']:
+        identifier = root.find(f'.//mods:identifier[@type="{id_type}"]', ns)
+        if identifier:
+            data[id_type] = identifier.text.strip('ocn') if id_type == 'oclc' and identifier.text else identifier.text if identifier else ""
+
+    return data
+
+def extract_from_html(url, content):
+    soup = BeautifulSoup(content, 'html.parser')
+    json_ld_script = soup.find('script', type='application/ld+json')
+    if json_ld_script:
+        try:
+            data = json.loads(json_ld_script.string)
+            return {
+                'title': data.get("name", ""),
+                'author': data.get("author", {}).get("name", ""),
+                'publisher': data.get("publisher", ""),
+                'fromWhat': url
+            }
+        except json.JSONDecodeError:
+            return None
+
+    return None
+
 def generate_prefilled_jotform_url(data):
+    if not data:
+        print("Error: No data to generate URL.")
+        return None
+
     # Base URL of the JotForm
     base_url = "https://wittenberg.jotform.com/202176782372155"
 
@@ -102,15 +125,27 @@ def generate_prefilled_jotform_url(data):
 
     # Construct the full URL
     full_url = f"{base_url}?{encoded_params}"
-
     return full_url
 
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: python script.py <URL>")
+        sys.exit(1)
+
+    url = sys.argv[1]
+    content = get_url_content(url)
+    if "worldcat.org" in url:
+        extracted_data = extract_from_html(url, content)
+    else:
+        extracted_data = extract_data_from_xml(url, content)
+
+    if not extracted_data:
+        print("Failed to extract data.")
+        sys.exit(1)
+
+    jotform_url = generate_prefilled_jotform_url(extracted_data)
+    if jotform_url:
+        webbrowser.open(jotform_url)
+
 if __name__ == "__main__":
-    url = sys.argv[1] if len(sys.argv) > 1 else None
-    extracted_data = download_and_parse_xml(url) if url else None
-
-    # Generate the URL
-    url_to_open = generate_prefilled_jotform_url(extracted_data)
-
-    # Open the URL in the default browser
-    webbrowser.open(url_to_open)
+    main()
