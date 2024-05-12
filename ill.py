@@ -55,10 +55,6 @@ def download_and_parse_xml(url):
     oclc = oclc.text.replace('ocn', '') if oclc is not None else ''
     lccn = lccn.text if lccn is not None else ''
 
-    # Modify the URL for 'fromWhat' field, remove '/mods' if present
-    if url.endswith('/mods'):
-        url = url[:-5]
-
     return {
         'title': full_title,
         'author': author,
@@ -70,7 +66,7 @@ def download_and_parse_xml(url):
         'physical_description': physical_description,
         'series_title': series_title,
         'series_part_number': series_part_number,
-        'fromWhat': url
+        'fromWhat': url[:-5] if url and url.endswith('/mods') else 'https://www.wittenberg.edu/lib/services/forms/ill_book'
     }
 
 def generate_prefilled_jotform_url(data):
@@ -110,13 +106,8 @@ def generate_prefilled_jotform_url(data):
     return full_url
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python script.py <LoC MODS URL>")
-        sys.exit(1)
-
-    # URL from command line argument
-    url = sys.argv[1]
-    extracted_data = download_and_parse_xml(url)
+    url = sys.argv[1] if len(sys.argv) > 1 else None
+    extracted_data = download_and_parse_xml(url) if url else None
 
     # Generate the URL
     url_to_open = generate_prefilled_jotform_url(extracted_data)
