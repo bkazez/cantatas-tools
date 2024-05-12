@@ -4,6 +4,8 @@ import xml.etree.ElementTree as ET
 import requests
 from bs4 import BeautifulSoup
 import sys
+import re
+import html
 import json
 
 def get_url_content(url):
@@ -16,15 +18,18 @@ def parse_xml(content):
     ns = {'mods': 'http://www.loc.gov/mods/v3'}
     return root, ns
 
-def extract_data_from_xml(url, content):
-    root, ns = parse_xml(content)
-
-    data = {
+def empty_data():
+    return {
         'title': '', 'author': '', 'year_of_publication': '',
-        'isbn': '', 'oclc': '', 'lccn': '', 'publisher': '',
+        'oclc': '', 'lccn': '', 'publisher': '',
         'physical_description': '', 'series_title': '', 'series_part_number': '',
         'fromWhat': '',
     }
+
+def extract_data_from_xml(url, content):
+    root, ns = parse_xml(content)
+
+    data = empty_data()
 
     if url:
         data['fromWhat'] = url[:-5] if url.endswith('/mods') else url
@@ -37,56 +42,81 @@ def extract_data_from_xml(url, content):
         data['title'] = (title.text if title is not None else "") + (f": {subTitle.text}" if subTitle else "")
 
     # Extract series information
+
     series_element = root.find('.//mods:relatedItem[@type="series"]', ns)
     if series_element:
-        series_title = series_element.find('.//mods:title', ns)
-        series_part_number = series_element.find('.//mods:partNumber', ns)
-        data['series_title'] = series_title.text if series_title else ""
-        data['series_part_number'] = series_part_number.text if series_part_number else ""
+        series_title = series_element.find('.//mods:titleInfo/mods:title', ns)
+        series_part_number = series_element.find('.//mods:titleInfo/mods:partNumber', ns)
+        data['series_title'] = series_title.text if series_title is not None else ""
+        data['series_part_number'] = series_part_number.text if series_part_number is not None else ""
 
     # Extract author information
     first_personal_name = root.find('.//mods:name[@type="personal"]', ns)
-    if first_personal_name:
-        primary_name_part = first_personal_name.find('mods:namePart', ns)
-        author_date = first_personal_name.find('mods:namePart[@type="date"]', ns)
-        data['author'] = (primary_name_part.text.strip(',') if primary_name_part else "") + (f" ({author_date.text})" if author_date else "")
+    primary_name_part = first_personal_name.find('mods:namePart', ns).text.strip(',')
+    author_date = first_personal_name.find('mods:namePart[@type="date"]', ns)
+    author_date = f" ({author_date.text})" if author_date is not None else ''
+    data['author'] = primary_name_part + author_date
 
     # Extract publishing information
-    origin_info = root.find('.//mods:originInfo', ns)
-    if origin_info:
-        publisher_name_part = origin_info.find('mods:agent/mods:namePart', ns)
-        date_issued = origin_info.find('mods:dateIssued', ns)
-        data['publisher'] = publisher_name_part.text if publisher_name_part else ""
-        data['year_of_publication'] = date_issued.text if date_issued else ""
+    publication_info = root.find('.//mods:originInfo[@eventType="publication"]', ns)
+    if publication_info:
+        publisher_element = root.find('.//mods:originInfo[@eventType="publication"]/mods:agent/mods:namePart', ns)
+        data['publisher'] = publisher_element.text.strip(',') if publisher_element is not None else ''
+
+        date_issued = publication_info.find('mods:dateIssued', ns)
+        data['year_of_publication'] = date_issued.text if date_issued is not None else ''
 
     # Extract physical description
     physical_description = root.find('.//mods:physicalDescription/mods:extent', ns)
-    data['physical_description'] = physical_description.text if physical_description else ""
+    data['physical_description'] = physical_description.text if physical_description is not None else ""
 
     # Extract identifiers
-    for id_type in ['isbn', 'oclc', 'lccn']:
-        identifier = root.find(f'.//mods:identifier[@type="{id_type}"]', ns)
-        if identifier:
-            data[id_type] = identifier.text.strip('ocn') if id_type == 'oclc' and identifier.text else identifier.text if identifier else ""
+    for id_type in ['oclc', 'lccn']:
+        identifier_elements = root.findall(f'.//mods:identifier[@type="{id_type}"]', ns)
+        for identifier in identifier_elements:
+            identifier_text = identifier.text if identifier is not None else ''
+            # Remove any leading non-numeric characters for 'oclc' identifiers
+            if id_type == 'oclc':
+                # Using regex to find the first sequence of digits and ignore non-digit prefixes
+                match = re.search(r'\d+', identifier_text)
+                identifier_text = match.group(0) if match else ''
+            data[id_type] = identifier_text
+            # Assuming only one identifier per type is needed, break after finding the first valid one
+            if identifier_text:
+                break
 
     return data
 
 def extract_from_html(url, content):
     soup = BeautifulSoup(content, 'html.parser')
-    json_ld_script = soup.find('script', type='application/ld+json')
-    if json_ld_script:
+    json_data_script = soup.find('script', {'type': 'application/json'}, id='__NEXT_DATA__')
+    if json_data_script:
         try:
-            data = json.loads(json_ld_script.string)
-            return {
-                'title': data.get("name", ""),
-                'author': data.get("author", {}).get("name", ""),
-                'publisher': data.get("publisher", ""),
-                'fromWhat': url
-            }
-        except json.JSONDecodeError:
+            data_json = json.loads(json_data_script.string)
+            record = data_json['props']['pageProps']['record']
+            data = empty_data()
+            data.update({
+                'title': record.get("title", ""),
+                'author': record.get("creator", ""),
+                'publisher': record.get("publisher", ""),
+                'year_of_publication': record.get("publicationDate", ""),
+                'physical_description': record.get("physicalDescription", ""),
+                'series_title': record.get("series", ""),
+                'series_part_number': ','.join(record.get("seriesVolumes", "")),
+                'oclc': record.get("oclcNumber", ""),
+                'fromWhat': url,
+            })
+            print(data)
+            return data
+        except json.JSONDecodeError as e:
+            print(f"JSON decode error: {e}")
             return None
-
-    return None
+        except KeyError as e:
+            print(f"Key error: {e}")
+            return None
+    else:
+        print("Unable to find the required JSON data.")
+        sys.exit(1)
 
 def generate_prefilled_jotform_url(data):
     if not data:
@@ -113,11 +143,10 @@ def generate_prefilled_jotform_url(data):
         'title': data['title'],
         'author': data['author'],
         'yearOf': data['year_of_publication'],
-        'isbn': data['isbn'],
         'oclc': data['oclc'],
         'lccn': data['lccn'],
         'edition': '. '.join(filter(None, [data['publisher'], data['series_title'], data['series_part_number'], data['physical_description']])),
-        'fromWhat': data['fromWhat']
+        'fromWhat': data['fromWhat'],
     }
 
     # Encode the parameters
