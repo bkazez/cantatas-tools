@@ -80,6 +80,7 @@ def extract_from_html(url, content):
         try:
             data_json = json.loads(json_data_script.string)
             record = data_json['props']['pageProps']['record']
+            print(record)
             data = empty_data()
             data.update({
                 'title': record.get("title", ""),
@@ -88,7 +89,7 @@ def extract_from_html(url, content):
                 'year_of_publication': record.get("publicationDate", ""),
                 'physical_description': record.get("physicalDescription", ""),
                 'series_title': record.get("series", ""),
-                'series_part_number': ','.join(record.get("seriesVolumes", "")),
+                'series_part_number': ','.join(record.get("seriesVolumes", []) or []),
                 'oclc': record.get("oclcNumber", ""),
                 'fromWhat': url,
             })
